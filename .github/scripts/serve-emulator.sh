@@ -82,6 +82,7 @@ if ! curl -fsS --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused "$br
   exit 1
 fi
 echo "BROWSER_URL=${browser_url}"
+echo "::notice title=Live Android emulator::$browser_url"
 echo 'Open the URL above, choose Connect, and enter the VNC_PASSWORD repository secret.'
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {
