@@ -8,6 +8,24 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # --- FIX: THIS ENABLES HARDWARE ACCELERATION FOR THE RUNNER ---
+      - name: Enable KVM Hardware Acceleration
+        run: |
+          # 1. Add the current runner user to the kvm group
+          sudo gpasswd -a $USER kvm
+          
+          # 2. Open permissions on the KVM hardware device file
+          sudo chmod 0666 /dev/kvm
+          
+          # 3. Reload system udev rules to ensure it takes effect immediately
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Run Android Emulator and Stream to Browser
         uses: reactivecircus/android-emulator-runner@v2
         env:
@@ -21,11 +39,11 @@ jobs:
             serve-avd &
             sleep 5
             
-            # Download and authenticate ngrok
+            # Download and install ngrok
             curl -s https://amazonaws.com | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
             echo "deb https://amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
             sudo apt-get update && sudo apt-get install ngrok
             ngrok config add-authtoken $NGROK_TOKEN
             
-            # Start tunnel with your permanent free static domain
+            # Start your permanent ngrok tunnel
             ngrok http 3200 --url=your-free-static-domain.ngrok.app
