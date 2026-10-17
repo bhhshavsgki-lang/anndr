@@ -76,7 +76,7 @@ done
 [[ -n "${url:-}" ]] || { cat /tmp/cloudflared.log; exit 1; }
 
 browser_url="${url}/vnc.html?autoconnect=true&resize=scale"
-if ! curl -fsS --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused "$browser_url" >/dev/null; then
+if ! curl -fsS --max-time 10 --retry 20 --retry-delay 2 --retry-all-errors "$browser_url" >/dev/null; then
   echo 'The temporary browser URL did not respond successfully.'
   cat /tmp/cloudflared.log
   exit 1
