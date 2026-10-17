@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb x11vnc novnc websockify x11-utils curl
+          sudo apt-get install -y --no-install-recommends xvfb x11vnc novnc websockify x11-utils libpulse0 curl
 
           # Ubuntu installs novnc_proxy under /usr/share/novnc.
           NOVNC_PROXY="$(command -v novnc_proxy || true)"
