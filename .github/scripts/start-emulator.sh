@@ -8,12 +8,12 @@ export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/c
 
 command -v sdkmanager >/dev/null || { echo 'Android sdkmanager is unavailable on this runner.'; exit 1; }
 command -v avdmanager >/dev/null || { echo 'Android avdmanager is unavailable on this runner.'; exit 1; }
-command -v emulator >/dev/null || { echo 'Android emulator is unavailable on this runner.'; exit 1; }
 
 set +o pipefail
 yes | sdkmanager --licenses >/dev/null
 set -o pipefail
 sdkmanager 'platform-tools' 'emulator' 'system-images;android-35;google_apis;x86_64'
+command -v emulator >/dev/null || { echo 'Android emulator is unavailable after SDK installation.'; exit 1; }
 echo no | avdmanager create avd \
   --force \
   --name browser-session \
