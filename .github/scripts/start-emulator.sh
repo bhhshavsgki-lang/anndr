@@ -31,10 +31,12 @@ emulator -list-avds | grep -Fx browser-session >/dev/null || {
 nohup emulator \
   -avd browser-session \
   -port 5554 \
+  -cores 4 \
+  -memory 4096 \
   -no-snapshot \
   -no-audio \
   -gpu swiftshader_indirect \
-  -scale 0.75 \
+  -scale 1.5 \
   -no-boot-anim \
   -camera-back none \
   >/tmp/emulator.log 2>&1 </dev/null &
@@ -64,5 +66,7 @@ done
 adb -s emulator-5554 shell settings put global window_animation_scale 0
 adb -s emulator-5554 shell settings put global transition_animation_scale 0
 adb -s emulator-5554 shell settings put global animator_duration_scale 0
-adb -s emulator-5554 shell input keyevent 82 || true
+adb -s emulator-5554 shell input keyevent 82
+adb -s emulator-5554 shell input keyevent KEYCODE_HOME
+sleep 20
 echo "Android emulator is ready (Android $(adb -s emulator-5554 shell getprop ro.build.version.release | tr -d '\r'))."
