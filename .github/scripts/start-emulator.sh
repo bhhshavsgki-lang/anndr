@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 export ANDROID_HOME
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
 export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 
 command -v sdkmanager >/dev/null || { echo 'Android sdkmanager is unavailable on this runner.'; exit 1; }
@@ -14,11 +15,18 @@ yes | sdkmanager --licenses >/dev/null
 set -o pipefail
 sdkmanager 'platform-tools' 'emulator' 'system-images;android-35;google_apis;x86_64'
 command -v emulator >/dev/null || { echo 'Android emulator is unavailable after SDK installation.'; exit 1; }
+mkdir -p "$ANDROID_AVD_HOME"
 echo no | avdmanager create avd \
   --force \
   --name browser-session \
   --package 'system-images;android-35;google_apis;x86_64' \
-  --device pixel_6
+  --device pixel_6 \
+  --path "$ANDROID_AVD_HOME/browser-session.avd"
+emulator -list-avds | grep -Fx browser-session >/dev/null || {
+  echo "AVD browser-session was not created under $ANDROID_AVD_HOME."
+  find "$ANDROID_AVD_HOME" -maxdepth 2 -type f -print
+  exit 1
+}
 
 nohup emulator \
   -avd browser-session \
