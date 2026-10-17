@@ -5,6 +5,11 @@ set -Eeuo pipefail
 : "${VNC_PASSWORD:?Set the repository secret VNC_PASSWORD before running this workflow}"
 : "${SESSION_MINUTES:=20}"
 
+if ! [[ "$SESSION_MINUTES" =~ ^[0-9]+$ ]] || (( SESSION_MINUTES < 5 || SESSION_MINUTES > 30 )); then
+  echo 'SESSION_MINUTES must be a whole number from 5 to 30.'
+  exit 1
+fi
+
 cleanup() {
   set +e
   [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
@@ -39,19 +44,39 @@ X11VNC_DISPLAY="$DISPLAY" x11vnc \
   >/tmp/x11vnc.log 2>&1 &
 VNC_PID=$!
 
-novnc_proxy --vnc localhost:5900 --listen 6080 --web /usr/share/novnc \
+websockify --web /usr/share/novnc 6080 localhost:5900 \
   >/tmp/novnc.log 2>&1 &
 NOVNC_PID=$!
 
-curl -fsS --retry 20 --retry-delay 1 http://127.0.0.1:6080/vnc.html >/dev/null
+for i in {1..30}; do
+  vnc_ready=false
+  web_ready=false
+  timeout 1 bash -c ': >/dev/tcp/127.0.0.1/5900' 2>/dev/null && vnc_ready=true
+  curl -fsS http://127.0.0.1:6080/vnc.html >/dev/null 2>&1 && web_ready=true
+  if [[ "$vnc_ready" == true && "$web_ready" == true ]]; then
+    break
+  fi
+  if ! kill -0 "$VNC_PID" 2>/dev/null || ! kill -0 "$NOVNC_PID" 2>/dev/null; then
+    echo 'VNC or noVNC web proxy exited during startup.'
+    cat /tmp/x11vnc.log /tmp/novnc.log
+    exit 1
+  fi
+  sleep 1
+done
+
+if [[ "$vnc_ready" != true || "$web_ready" != true ]]; then
+  echo 'VNC or noVNC web proxy did not become ready within 30 seconds.'
+  cat /tmp/x11vnc.log /tmp/novnc.log
+  exit 1
+fi
 
 echo 'Starting temporary HTTPS tunnel. The URL below is the browser entry point:'
-cloudflared >/dev/null 2>&1 || {
+if ! command -v cloudflared >/dev/null 2>&1; then
   curl -fsSL --retry 3 -o /tmp/cloudflared \
     https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
   chmod +x /tmp/cloudflared
   CLOUDFLARED=/tmp/cloudflared
-}
+fi
 : "${CLOUDFLARED:=cloudflared}"
 "$CLOUDFLARED" tunnel --no-autoupdate --url http://127.0.0.1:6080 \
   2>&1 | tee /tmp/cloudflared.log &
