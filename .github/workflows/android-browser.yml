@@ -1,0 +1,37 @@
+name: Interactive Android Emulator
+on: workflow_dispatch # Allows you to manually trigger it from the Actions tab
+
+jobs:
+  run-emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Enable KVM Group Permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Set up Node.js (for streamer)
+        uses: actions/setup-node@v4
+        with:
+          node-node: '20'
+
+      - name: Run Android Emulator and Stream to Browser
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          script: |
+            # 1. Install the serve-avd streamer globally
+            npm install -g serve-avd
+            
+            # 2. Start streaming the emulator locally in the background (defaults to port 8080)
+            serve-avd &
+            
+            # 3. Create a public tunnel over port 8080 using Pinggy
+            # This prints a public URL to your GitHub Actions console log
+            ssh -p 443 -R0:localhost:8080 -o StrictHostKeyChecking=no public@loophole.host
