@@ -34,6 +34,7 @@ nohup emulator \
   -no-snapshot \
   -no-audio \
   -gpu swiftshader_indirect \
+  -scale 0.75 \
   -no-boot-anim \
   -camera-back none \
   >/tmp/emulator.log 2>&1 </dev/null &
