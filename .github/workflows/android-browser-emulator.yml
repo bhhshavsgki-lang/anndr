@@ -48,20 +48,36 @@ jobs:
       - name: Start virtual X display
         shell: bash
         run: |
-          Xvfb "$DISPLAY" -screen 0 1080x1920x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
+          nohup Xvfb "$DISPLAY" -screen 0 1080x1920x24 -ac +extension RANDR >/tmp/xvfb.log 2>&1 </dev/null &
           echo "$!" >/tmp/xvfb.pid
           for i in {1..20}; do xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break; sleep 1; done
           xdpyinfo -display "$DISPLAY" >/dev/null
 
-      - name: Boot emulator and open browser session
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          cores: 4
-          ram-size: 4096M
-          emulator-options: -no-snapshot -no-audio -gpu swiftshader_indirect -no-boot-anim -camera-back none
-          disable-animations: true
-          script: bash .github/scripts/serve-emulator.sh
+      - name: Boot Android emulator
+        shell: bash
+        run: bash .github/scripts/start-emulator.sh
+
+      - name: Start browser session and print link
+        shell: bash
+        run: bash .github/scripts/serve-emulator.sh
+
+      - name: Keep browser session alive
+        shell: bash
+        run: |
+          if ! [[ "$SESSION_MINUTES" =~ ^[0-9]+$ ]] || (( SESSION_MINUTES < 5 || SESSION_MINUTES > 30 )); then
+            echo 'SESSION_MINUTES must be a whole number from 5 to 30.'
+            exit 1
+          fi
+          echo "Keeping the browser session alive for ${SESSION_MINUTES} minute(s)."
+          sleep "$((SESSION_MINUTES * 60))"
+
+      - name: Stop emulator and browser services
+        if: always()
+        shell: bash
+        run: |
+          for pidfile in /tmp/cloudflared.pid /tmp/novnc.pid /tmp/x11vnc.pid /tmp/emulator.pid /tmp/xvfb.pid; do
+            if [[ -s "$pidfile" ]]; then
+              kill "$(cat "$pidfile")" 2>/dev/null || true
+            fi
+          done
+          adb emu kill 2>/dev/null || true

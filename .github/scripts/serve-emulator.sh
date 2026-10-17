@@ -3,50 +3,30 @@ set -Eeuo pipefail
 
 : "${DISPLAY:=:99}"
 : "${VNC_PASSWORD:?Set the repository secret VNC_PASSWORD before running this workflow}"
-: "${SESSION_MINUTES:=20}"
+ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+export ANDROID_HOME
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
-if ! [[ "$SESSION_MINUTES" =~ ^[0-9]+$ ]] || (( SESSION_MINUTES < 5 || SESSION_MINUTES > 30 )); then
-  echo 'SESSION_MINUTES must be a whole number from 5 to 30.'
-  exit 1
-fi
-
-cleanup() {
-  set +e
-  [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
-  [[ -n "${NOVNC_PID:-}" ]] && kill "$NOVNC_PID" 2>/dev/null || true
-  [[ -n "${VNC_PID:-}" ]] && kill "$VNC_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-adb wait-for-device
-for i in {1..60}; do
-  booted="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
-  [[ "$booted" == "1" ]] && break
-  sleep 2
-done
-[[ "${booted:-}" == "1" ]] || { echo 'Emulator did not finish booting'; exit 1; }
-adb shell settings put global window_animation_scale 0
-adb shell settings put global transition_animation_scale 0
-adb shell settings put global animator_duration_scale 0
-adb shell input keyevent 82 || true
+adb -s emulator-5554 wait-for-device
 
 echo "Emulator is ready:"
 adb devices
-adb shell getprop ro.build.version.release
 
 passfile=/tmp/x11vnc.pass
 x11vnc -storepasswd "$VNC_PASSWORD" "$passfile" >/dev/null
-X11VNC_DISPLAY="$DISPLAY" x11vnc \
+nohup x11vnc \
   -display "$DISPLAY" \
   -rfbport 5900 \
   -rfbauth "$passfile" \
   -forever -shared -noxdamage -repeat -localhost \
-  >/tmp/x11vnc.log 2>&1 &
+  >/tmp/x11vnc.log 2>&1 </dev/null &
 VNC_PID=$!
+echo "$VNC_PID" >/tmp/x11vnc.pid
 
-websockify --web /usr/share/novnc 6080 localhost:5900 \
-  >/tmp/novnc.log 2>&1 &
+nohup websockify --web /usr/share/novnc 6080 localhost:5900 \
+  >/tmp/novnc.log 2>&1 </dev/null &
 NOVNC_PID=$!
+echo "$NOVNC_PID" >/tmp/novnc.pid
 
 for i in {1..30}; do
   vnc_ready=false
@@ -78,18 +58,37 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   CLOUDFLARED=/tmp/cloudflared
 fi
 : "${CLOUDFLARED:=cloudflared}"
-"$CLOUDFLARED" tunnel --no-autoupdate --url http://127.0.0.1:6080 \
-  2>&1 | tee /tmp/cloudflared.log &
+nohup "$CLOUDFLARED" tunnel --no-autoupdate --url http://127.0.0.1:6080 \
+  >/tmp/cloudflared.log 2>&1 </dev/null &
 TUNNEL_PID=$!
+echo "$TUNNEL_PID" >/tmp/cloudflared.pid
 
 for i in {1..30}; do
   url="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || true)"
   [[ -n "$url" ]] && break
+  if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    echo 'Cloudflare tunnel exited before providing a URL.'
+    cat /tmp/cloudflared.log
+    exit 1
+  fi
   sleep 1
 done
 [[ -n "${url:-}" ]] || { cat /tmp/cloudflared.log; exit 1; }
 
-echo "BROWSER_URL=${url}/vnc.html?autoconnect=true&resize=scale"
+browser_url="${url}/vnc.html?autoconnect=true&resize=scale"
+if ! curl -fsS --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused "$browser_url" >/dev/null; then
+  echo 'The temporary browser URL did not respond successfully.'
+  cat /tmp/cloudflared.log
+  exit 1
+fi
+echo "BROWSER_URL=${browser_url}"
 echo 'Open the URL above, choose Connect, and enter the VNC_PASSWORD repository secret.'
-echo "Holding session for ${SESSION_MINUTES} minute(s)."
-sleep "$((SESSION_MINUTES * 60))"
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  {
+    echo '## Android emulator browser session'
+    echo
+    echo "[Open the emulator in your browser](${browser_url})"
+    echo
+    echo 'When prompted, enter the repository secret `VNC_PASSWORD`.'
+  } >>"$GITHUB_STEP_SUMMARY"
+fi
